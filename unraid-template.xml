@@ -1,0 +1,122 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>Fling</Name>
+  <Repository>ghcr.io/roandegraaf/fling:latest</Repository>
+  <Registry>https://github.com/roandegraaf/fling/pkgs/container/fling</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/roandegraaf/fling/issues</Support>
+  <Project>https://github.com/roandegraaf/fling</Project>
+  <Overview>Self-hosted file transfer. Drag files, folders or whole trees into the browser, get a short link that is easy to read out loud, and the recipient downloads individual files, folders as a zip, or everything at once.[br][br]Files are encrypted at rest with a master key held in /config. Uploads are chunked and resume after a dropped connection or a server restart.[br][br]IMPORTANT: create the two host directories and give them to nobody:users before starting the container, or the first boot cannot write its master key:[br]mkdir -p /mnt/cache/appdata/fling /mnt/user/fling-data[br]chown -R 99:100 /mnt/cache/appdata/fling /mnt/user/fling-data[br][br]Then open the WebUI at /admin and set an admin password.</Overview>
+  <Category>Productivity: Tools:Utilities Network:Other</Category>
+  <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+  <Icon/>
+  <ExtraParams>--user 99:100</ExtraParams>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+
+  <Config
+    Name="WebUI Port"
+    Target="8080"
+    Default="8080"
+    Mode="tcp"
+    Description="Host port for the web interface."
+    Type="Port"
+    Display="always"
+    Required="true"
+    Mask="false">8080</Config>
+
+  <Config
+    Name="Config (SQLite + master key)"
+    Target="/config"
+    Default="/mnt/cache/appdata/fling"
+    Mode="rw"
+    Description="Holds the SQLite database and master.key. Keep this on a CACHE-BACKED path (/mnt/cache/...), NOT /mnt/user — SQLite over Unraid's fuse mount can hit file-locking problems. Back up master.key: without it every stored file is unrecoverable."
+    Type="Path"
+    Display="always"
+    Required="true"
+    Mask="false">/mnt/cache/appdata/fling</Config>
+
+  <Config
+    Name="Data (encrypted file blobs)"
+    Target="/data"
+    Default="/mnt/user/fling-data"
+    Mode="rw"
+    Description="The encrypted blobs. Plain sequential I/O, so this is happy on the array."
+    Type="Path"
+    Display="always"
+    Required="true"
+    Mask="false">/mnt/user/fling-data</Config>
+
+  <Config
+    Name="Public URL"
+    Target="FLING_PUBLIC_URL"
+    Default=""
+    Mode=""
+    Description="Base URL used in generated share links, e.g. https://fling.example.com. Leave empty to derive it from the incoming request. Set it when you run behind a reverse proxy."
+    Type="Variable"
+    Display="always"
+    Required="false"
+    Mask="false"/>
+
+  <Config
+    Name="Admin password"
+    Target="FLING_ADMIN_PASSWORD"
+    Default=""
+    Mode=""
+    Description="Optional. Sets the admin password on EVERY boot while present, overwriting any change made in the admin page. Leave empty and claim the password by visiting /admin instead."
+    Type="Variable"
+    Display="always"
+    Required="false"
+    Mask="true"/>
+
+  <Config
+    Name="Trust proxy headers"
+    Target="FLING_TRUST_PROXY"
+    Default="false"
+    Mode=""
+    Description="Set to true ONLY when a reverse proxy is the sole route to this container. When on, X-Forwarded-For is taken at face value — and that header is what the rate limiter keys on, so a client that can reach the port directly can rotate it and sidestep the admin-login and slug-lookup limits."
+    Type="Variable"
+    Display="always"
+    Required="false"
+    Mask="false">false</Config>
+
+  <Config
+    Name="Timezone"
+    Target="TZ"
+    Default="Europe/Amsterdam"
+    Mode=""
+    Description="Timezone used for logs and expiry timestamps."
+    Type="Variable"
+    Display="always"
+    Required="false"
+    Mask="false">Europe/Amsterdam</Config>
+
+  <Config
+    Name="Master key"
+    Target="FLING_MASTER_KEY"
+    Default=""
+    Mode=""
+    Description="Optional. 32-byte key as base64 or 64 hex chars — generate with: openssl rand -base64 32. Leave empty to have one generated into /config/master.key on first boot. Either way, BACK IT UP. Changing this after files exist makes them unreadable."
+    Type="Variable"
+    Display="advanced"
+    Required="false"
+    Mask="true"/>
+
+  <Config
+    Name="Log level"
+    Target="FLING_LOG_LEVEL"
+    Default="info"
+    Mode=""
+    Description="Pino log level: trace, debug, info, warn, error, fatal."
+    Type="Variable"
+    Display="advanced"
+    Required="false"
+    Mask="false">info</Config>
+</Container>

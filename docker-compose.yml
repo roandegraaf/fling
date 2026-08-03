@@ -1,0 +1,39 @@
+services:
+  fling:
+    image: ghcr.io/roandegraaf/fling:latest
+    # Swap the image line for this to build from a source checkout instead.
+    # build: .
+    container_name: fling
+    restart: unless-stopped
+
+    # Unraid shares are owned by nobody:users. Running as 99:100 keeps the files
+    # readable from the Unraid UI and over SMB. Drop this line to run as root.
+    user: '99:100'
+
+    ports:
+      - '8080:8080'
+
+    volumes:
+      # SQLite + master key. Keep this on a CACHE-backed share — SQLite over the
+      # fuse mount (/mnt/user) can hit locking problems.
+      - /mnt/cache/appdata/fling:/config
+      # The encrypted blobs. This one can live on the array.
+      - /mnt/user/fling-data:/data
+
+    environment:
+      # The URL recipients will see in their share links. Set this when you run
+      # behind a reverse proxy; otherwise links are built from the request host.
+      # FLING_PUBLIC_URL: 'https://fling.example.com'
+
+      # Set once to claim the admin page without visiting /admin first.
+      # It is re-applied on every restart while present.
+      # FLING_ADMIN_PASSWORD: 'change-me'
+
+      # 32-byte key as base64 or 64 hex chars. If unset, one is generated into
+      # /config/master.key on first boot. EITHER WAY: BACK IT UP.
+      # Generate: openssl rand -base64 32
+      # FLING_MASTER_KEY: ''
+
+      # Turn off only if nothing sits in front of the container.
+      FLING_TRUST_PROXY: 'true'
+      TZ: 'Europe/Amsterdam'

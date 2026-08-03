@@ -1,0 +1,26 @@
+{
+  "name": "fling",
+  "version": "1.0.0",
+  "private": true,
+  "license": "MIT",
+  "description": "Self-hosted file transfer — drag anything, get a short link, encrypted at rest.",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web -c cyan,magenta \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "npm --workspace @fling/server run dev",
+    "dev:web": "npm --workspace @fling/web run dev",
+    "build": "npm --workspace @fling/web run build && npm --workspace @fling/server run build",
+    "start": "npm --workspace @fling/server run start",
+    "test": "npm --workspace @fling/server run test",
+    "typecheck": "npm --workspace @fling/server run typecheck && npm --workspace @fling/web run typecheck"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
