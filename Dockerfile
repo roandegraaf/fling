@@ -34,8 +34,11 @@ RUN npm ci --omit=dev && npm cache clean --force
 FROM node:24-bookworm-slim AS runtime
 WORKDIR /app
 
+# libjxl-tools provides cjxl/djxl, used to losslessly recompress stored JPEGs.
+# Absence is handled gracefully — the feature switches itself off — so this stays
+# a soft dependency, but without it there is nothing to shrink.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends tini \
+ && apt-get install -y --no-install-recommends tini libjxl-tools \
  && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production \

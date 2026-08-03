@@ -1542,6 +1542,51 @@ a:hover {
   gap: 16px;
 }
 
+.shrink-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--divider);
+  border-radius: 10px;
+  background: var(--accent-soft);
+  cursor: pointer;
+  transition: border-color var(--dur-quick) var(--ease-out);
+}
+
+.shrink-toggle:hover {
+  border-color: var(--accent-ring);
+}
+
+.shrink-toggle input {
+  margin-top: 2px;
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+  flex: none;
+  cursor: pointer;
+}
+
+.shrink-toggle span {
+  display: block;
+}
+
+.shrink-toggle strong {
+  display: block;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.shrink-toggle em {
+  display: block;
+  margin-top: 3px;
+  font-style: normal;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
 .admin-table {
   width: 100%;
   border-collapse: collapse;

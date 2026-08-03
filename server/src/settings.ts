@@ -20,6 +20,11 @@ export interface Settings {
   incompleteUploadTtlHours: number;
   /** How often the cleanup job runs, in minutes. */
   cleanupIntervalMinutes: number;
+  /**
+   * Losslessly recompress stored files in the background. Recipients always get
+   * the original bytes back; this only changes how they are held on disk.
+   */
+  shrinkEnabled: boolean;
   /** Scrypt hash; empty means the admin password has not been set up yet. */
   adminPasswordHash: string;
 }
@@ -33,6 +38,7 @@ const DEFAULTS: Settings = {
   storageQuotaBytes: 0,
   incompleteUploadTtlHours: 48,
   cleanupIntervalMinutes: 15,
+  shrinkEnabled: true,
   adminPasswordHash: '',
 };
 
@@ -60,6 +66,10 @@ function readAll(): Settings {
       out.adminPasswordHash = raw;
       continue;
     }
+    if (key === 'shrinkEnabled') {
+      out.shrinkEnabled = raw === 'true' || raw === '1';
+      continue;
+    }
     const parsed = Number(raw);
     if (Number.isFinite(parsed)) (out[key] as number) = parsed;
   }
@@ -81,6 +91,10 @@ const writeSettings = db.transaction((patch: Partial<Settings>) => {
     if (!(key in DEFAULTS)) continue;
     if (key === 'adminPasswordHash') {
       q.putSetting.run(key, String(value));
+      continue;
+    }
+    if (key === 'shrinkEnabled') {
+      q.putSetting.run(key, value ? 'true' : 'false');
       continue;
     }
     const num = Number(value);

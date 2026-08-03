@@ -12,6 +12,18 @@ import { Button } from '../components/Button';
 import { TrashIcon } from '../components/Icons';
 import { navigate } from '../router';
 
+/** Explains the savings figure, including the honest cases where there are none yet. */
+function shrinkNote(shrink: AdminStats['shrink']): string {
+  if (!shrink.available) return 'libjxl not installed on this server';
+  if (!shrink.enabled) return 'turned off in settings';
+  if (shrink.filesPending > 0) {
+    const done = shrink.filesShrunk > 0 ? `${formatBytes(shrink.savedBytes)} so far · ` : '';
+    return `${done}${shrink.filesPending} file${shrink.filesPending === 1 ? '' : 's'} still to check`;
+  }
+  if (shrink.savedBytes === 0) return 'nothing recompressible stored yet';
+  return `${formatBytes(shrink.savedBytes)} freed · ${shrink.filesShrunk} file${shrink.filesShrunk === 1 ? '' : 's'}`;
+}
+
 type Gate = 'checking' | 'setup' | 'login' | 'in';
 
 export function AdminPage() {
@@ -184,7 +196,8 @@ function Dashboard({ onSignedOut }: { onSignedOut: () => void }) {
     try {
       const result = await api.admin.cleanup();
       flash(
-        `Removed ${result.expired} expired, ${result.stalled} abandoned, ${result.orphans} orphaned.`,
+        `Removed ${result.expired} expired, ${result.stalled} abandoned, ${result.orphans} orphaned` +
+          `${result.superseded ? `, reclaimed ${result.superseded} superseded` : ''}.`,
       );
       void refresh();
     } catch (err) {
@@ -246,6 +259,17 @@ function Dashboard({ onSignedOut }: { onSignedOut: () => void }) {
               <div className="stat-note">{stats.storage.configDir}</div>
             </div>
             <div className="stat">
+              <div className="stat-label">Saved losslessly</div>
+              <div className="stat-value">
+                {stats.shrink.savedBytes > 0
+                  ? `${stats.shrink.savedPercent.toFixed(1)}%`
+                  : formatBytes(0)}
+              </div>
+              <div className="stat-note">
+                {shrinkNote(stats.shrink)}
+              </div>
+            </div>
+            <div className="stat">
               <div className="stat-label">Encryption</div>
               <div className="stat-value" style={{ fontSize: 17 }}>
                 AES-256-GCM
@@ -255,6 +279,25 @@ function Dashboard({ onSignedOut }: { onSignedOut: () => void }) {
               </div>
             </div>
           </div>
+
+          {stats.shrink.savedBytes > 0 && (
+            <div className="notice notice--ok" style={{ marginBottom: 24 }}>
+              <strong>
+                {formatBytes(stats.shrink.logicalBytes)} of files stored in{' '}
+                {formatBytes(stats.shrink.storedBytes)}.
+              </strong>{' '}
+              {stats.shrink.filesShrunk} file{stats.shrink.filesShrunk === 1 ? '' : 's'} recompressed
+              losslessly — every one of them decoded and checked against its original hash before the
+              first copy was dropped. Recipients download the exact bytes that were uploaded.
+              {stats.shrink.storedBytes < stats.storage.onDiskBytes && (
+                <>
+                  {' '}
+                  Superseded copies are held briefly so downloads already in flight cannot be pulled
+                  out from under, so <em>stored on disk</em> catches up after the next cleanup.
+                </>
+              )}
+            </div>
+          )}
 
           <div className="key-warning" style={{ marginBottom: 24 }}>
             <strong>Back up the master key.</strong> Files are stored encrypted in{' '}
@@ -378,8 +421,10 @@ function SettingsForm({
 
   useEffect(() => setDraft(toDraft(settings)), [settings]);
 
-  const set = (key: keyof ReturnType<typeof toDraft>, value: string): void =>
-    setDraft((current) => ({ ...current, [key]: value }));
+  const set = <K extends keyof ReturnType<typeof toDraft>>(
+    key: K,
+    value: ReturnType<typeof toDraft>[K],
+  ): void => setDraft((current) => ({ ...current, [key]: value }));
 
   return (
     <>
@@ -440,6 +485,22 @@ function SettingsForm({
             />
           </div>
 
+          <label className="shrink-toggle">
+            <input
+              type="checkbox"
+              checked={draft.shrinkEnabled}
+              onChange={(e) => set('shrinkEnabled', e.target.checked)}
+            />
+            <span>
+              <strong>Shrink stored files losslessly</strong>
+              <em>
+                Recompresses stored JPEGs in the background, verifying each one decodes back to its
+                original bytes before the first copy is removed. Recipients always download exactly
+                what was uploaded. Costs some CPU while it works.
+              </em>
+            </span>
+          </label>
+
           <div className="row" style={{ marginTop: 20 }}>
             <Button size="sm" disabled={busy} onClick={() => onSave(fromDraft(draft))}>
               Save limits
@@ -466,6 +527,7 @@ function toDraft(settings: AdminSettings) {
     storageQuotaBytes: String(round2(settings.storageQuotaBytes / GIB)),
     incompleteUploadTtlHours: String(settings.incompleteUploadTtlHours),
     cleanupIntervalMinutes: String(settings.cleanupIntervalMinutes),
+    shrinkEnabled: settings.shrinkEnabled,
   };
 }
 
@@ -479,6 +541,7 @@ function fromDraft(draft: ReturnType<typeof toDraft>): AdminSettings {
     storageQuotaBytes: Math.round(Number(draft.storageQuotaBytes) * GIB),
     incompleteUploadTtlHours: Number(draft.incompleteUploadTtlHours),
     cleanupIntervalMinutes: Number(draft.cleanupIntervalMinutes),
+    shrinkEnabled: draft.shrinkEnabled,
   };
 }
 

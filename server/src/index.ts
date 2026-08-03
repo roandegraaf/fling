@@ -19,6 +19,7 @@ import { CHUNK_SIZE, hashPassword, loadMasterKey, masterKeySource } from './cryp
 import { closeDb } from './db.ts';
 import { getSettings, publicSettings, setAdminPasswordHash } from './settings.ts';
 import { startCleanupLoop } from './cleanup.ts';
+import { startShrinkWorker, stopShrinkWorker } from './recompress.ts';
 import { registerUploadRoutes } from './routes/upload.ts';
 import { registerDownloadRoutes } from './routes/download.ts';
 import { registerAdminRoutes } from './routes/admin.ts';
@@ -110,6 +111,7 @@ app.setErrorHandler((err, req, reply) => {
 });
 
 const stopCleanup = startCleanupLoop(app.log);
+startShrinkWorker();
 
 async function shutdown(signal: string): Promise<void> {
   app.log.info({ signal }, 'shutting down');
@@ -119,6 +121,7 @@ async function shutdown(signal: string): Promise<void> {
   } catch (err) {
     app.log.error({ err }, 'error closing server');
   }
+  stopShrinkWorker();
   closeDb();
   process.exit(0);
 }

@@ -21,10 +21,16 @@ export interface TransferRow {
   last_download_at: number | null;
 }
 
+/** How the blob is encoded. NULL means the sender's bytes, verbatim. */
+export type FileCodec = null | 'jxl';
+
+export type ShrinkState = 'pending' | 'shrunk' | 'done' | 'skipped';
+
 export interface FileRow {
   id: string;
   transfer_id: string;
   path: string;
+  /** Length of the *original* file — what a recipient downloads. Never changes. */
   size: number;
   chunk_size: number;
   chunk_count: number;
@@ -32,6 +38,15 @@ export interface FileRow {
   received_count: number;
   complete: number;
   sort_order: number;
+  codec: FileCodec;
+  /** Bytes the blob actually holds. NULL means "same as size". */
+  stored_size: number | null;
+  shrink_state: ShrinkState;
+}
+
+/** Bytes this file occupies on disk, before per-chunk tags. */
+export function storedSizeOf(file: FileRow): number {
+  return file.stored_size ?? file.size;
 }
 
 export interface DirRow {
@@ -125,6 +140,20 @@ const MIGRATIONS: string[] = [
   CREATE INDEX idx_dl_sessions_lookup ON download_sessions(transfer_id, fingerprint, last_seen_at DESC);
   CREATE INDEX idx_dl_sessions_seen   ON download_sessions(last_seen_at);
   `,
+
+  // v3 — losslessly recompressed storage. `codec` names how the blob is encoded
+  // (NULL = the original bytes, verbatim); `stored_size` is how many bytes the
+  // blob actually holds, which stops matching `size` once a codec is applied.
+  // `shrink_state` drives the background pass:
+  //   pending → shrunk → done   (or → skipped, terminally)
+  // 'shrunk' means the new blob is live but the superseded original is still on
+  // disk on purpose — see cleanup.ts for why it is not deleted immediately.
+  `
+  ALTER TABLE files ADD COLUMN codec        TEXT;
+  ALTER TABLE files ADD COLUMN stored_size  INTEGER;
+  ALTER TABLE files ADD COLUMN shrink_state TEXT NOT NULL DEFAULT 'pending';
+  CREATE INDEX idx_files_shrink ON files(shrink_state);
+  `,
 ];
 
 function migrate(): void {
@@ -217,6 +246,39 @@ export const q = {
   allTransfers: db.prepare<[], TransferRow>('SELECT * FROM transfers ORDER BY created_at DESC'),
   totalStoredBytes: db.prepare<[], { total: number }>(
     "SELECT COALESCE(SUM(size), 0) AS total FROM files",
+  ),
+
+  /* ── lossless recompression ────────────────────────────────────────────── */
+
+  /** Oldest complete files still awaiting a shrink attempt. */
+  shrinkCandidates: db.prepare<[number], FileRow>(`
+    SELECT f.* FROM files f
+    JOIN transfers t ON t.id = f.transfer_id
+    WHERE f.shrink_state = 'pending' AND f.complete = 1 AND t.status = 'complete'
+    ORDER BY f.rowid
+    LIMIT ?
+  `),
+  markShrunk: db.prepare(
+    "UPDATE files SET codec = ?, stored_size = ?, shrink_state = 'shrunk' WHERE id = ?",
+  ),
+  markSwept: db.prepare("UPDATE files SET shrink_state = 'done' WHERE id = ?"),
+  markShrinkSkipped: db.prepare("UPDATE files SET shrink_state = 'skipped' WHERE id = ?"),
+  /** Logical bytes vs bytes actually stored — the two diverge once a codec applies. */
+  shrinkTotals: db.prepare<[], { logical: number; stored: number; shrunk: number }>(`
+    SELECT COALESCE(SUM(size), 0)                        AS logical,
+           COALESCE(SUM(COALESCE(stored_size, size)), 0) AS stored,
+           COALESCE(SUM(codec IS NOT NULL), 0)           AS shrunk
+    FROM files WHERE complete = 1
+  `),
+  /**
+   * Recompressed files whose superseded original is still on disk. Bounded by
+   * the state flag rather than scanning every shrunk file on every sweep.
+   */
+  unsweptFiles: db.prepare<[number], FileRow>(
+    "SELECT * FROM files WHERE shrink_state = 'shrunk' LIMIT ?",
+  ),
+  pendingShrinkCount: db.prepare<[], { n: number }>(
+    "SELECT COUNT(*) AS n FROM files WHERE shrink_state = 'pending' AND complete = 1",
   ),
 
   getSetting: db.prepare<[string], { value: string }>('SELECT value FROM settings WHERE key = ?'),

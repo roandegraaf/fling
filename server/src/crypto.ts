@@ -80,15 +80,26 @@ export function masterKeySource(): 'env' | 'file' {
 
 const fileKeyCache = new Map<string, Buffer>();
 
-export function fileKey(fileId: string): Buffer {
-  const cached = fileKeyCache.get(fileId);
+/**
+ * A file's blob can be rewritten in place by recompression (see recompress.ts),
+ * which stores *different* plaintext for the same file id. Nonces are derived
+ * from the chunk index alone, so reusing one key across both versions would be
+ * an AES-GCM (key, nonce) reuse with differing plaintext — the one failure this
+ * scheme must never have. Each storage variant therefore gets its own key, and
+ * the empty variant keeps deriving exactly as it did before so existing blobs
+ * stay readable.
+ */
+export function fileKey(fileId: string, variant = ''): Buffer {
+  const cacheKey = variant ? `${variant}:${fileId}` : fileId;
+  const cached = fileKeyCache.get(cacheKey);
   if (cached) return cached;
+  const info = variant ? `fling-file-${variant}-v1` : 'fling-file-v1';
   const key = Buffer.from(
-    hkdfSync('sha256', loadMasterKey(), Buffer.from(fileId, 'utf8'), Buffer.from('fling-file-v1'), 32),
+    hkdfSync('sha256', loadMasterKey(), Buffer.from(fileId, 'utf8'), Buffer.from(info), 32),
   );
   // Bounded so a long-lived process with many transfers can't grow without limit.
   if (fileKeyCache.size > 512) fileKeyCache.clear();
-  fileKeyCache.set(fileId, key);
+  fileKeyCache.set(cacheKey, key);
   return key;
 }
 
@@ -98,21 +109,36 @@ function nonceFor(chunkIndex: number): Buffer {
   return nonce;
 }
 
-export function sealChunk(fileId: string, chunkIndex: number, plaintext: Buffer): Buffer {
-  const cipher = createCipheriv('aes-256-gcm', fileKey(fileId), nonceFor(chunkIndex));
-  cipher.setAAD(Buffer.from(fileId, 'utf8'));
+export function sealChunk(
+  fileId: string,
+  chunkIndex: number,
+  plaintext: Buffer,
+  variant = '',
+): Buffer {
+  const cipher = createCipheriv('aes-256-gcm', fileKey(fileId, variant), nonceFor(chunkIndex));
+  cipher.setAAD(aadFor(fileId, variant));
   const body = Buffer.concat([cipher.update(plaintext), cipher.final()]);
   return Buffer.concat([body, cipher.getAuthTag()]);
 }
 
-export function openChunk(fileId: string, chunkIndex: number, sealed: Buffer): Buffer {
+export function openChunk(
+  fileId: string,
+  chunkIndex: number,
+  sealed: Buffer,
+  variant = '',
+): Buffer {
   if (sealed.length < TAG_LEN) throw new Error(`chunk ${chunkIndex} is truncated`);
   const body = sealed.subarray(0, sealed.length - TAG_LEN);
   const tag = sealed.subarray(sealed.length - TAG_LEN);
-  const decipher = createDecipheriv('aes-256-gcm', fileKey(fileId), nonceFor(chunkIndex));
-  decipher.setAAD(Buffer.from(fileId, 'utf8'));
+  const decipher = createDecipheriv('aes-256-gcm', fileKey(fileId, variant), nonceFor(chunkIndex));
+  decipher.setAAD(aadFor(fileId, variant));
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(body), decipher.final()]);
+}
+
+/** Binds a chunk to its file *and* its storage variant, so the two can't be swapped. */
+function aadFor(fileId: string, variant: string): Buffer {
+  return Buffer.from(variant ? `${fileId}|${variant}` : fileId, 'utf8');
 }
 
 /* ── passwords ───────────────────────────────────────────────────────────── */

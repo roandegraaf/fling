@@ -11,6 +11,7 @@ import {
   type Settings,
 } from '../settings.ts';
 import { deleteTransferBlobs, diskUsage } from '../storage.ts';
+import { encoderAvailable, shrinkStats } from '../recompress.ts';
 
 const COOKIE = 'fling_admin';
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -24,6 +25,7 @@ const EDITABLE_KEYS: (keyof Settings)[] = [
   'storageQuotaBytes',
   'incompleteUploadTtlHours',
   'cleanupIntervalMinutes',
+  'shrinkEnabled',
 ];
 
 function isSetUp(): boolean {
@@ -138,6 +140,10 @@ export function registerAdminRoutes(app: FastifyInstance): void {
       for (const key of EDITABLE_KEYS) {
         const value = req.body?.[key];
         if (value === undefined || value === null || value === '') continue;
+        if (key === 'shrinkEnabled') {
+          patch.shrinkEnabled = value === true || value === 'true' || value === 1 || value === '1';
+          continue;
+        }
         const num = Number(value);
         if (Number.isFinite(num)) (patch[key] as number) = num;
       }
@@ -228,6 +234,11 @@ export function registerAdminRoutes(app: FastifyInstance): void {
         blobDir: BLOB_DIR,
         dataDir: DATA_DIR,
         configDir: CONFIG_DIR,
+      },
+      shrink: {
+        ...shrinkStats(),
+        available: await encoderAvailable(),
+        enabled: getSettings().shrinkEnabled,
       },
       encryption: {
         algorithm: 'AES-256-GCM, per-file key, 4 MiB chunks',

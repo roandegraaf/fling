@@ -168,6 +168,7 @@ export interface AdminSettings {
   storageQuotaBytes: number;
   incompleteUploadTtlHours: number;
   cleanupIntervalMinutes: number;
+  shrinkEnabled: boolean;
 }
 
 export interface AdminTransfer {
@@ -198,6 +199,16 @@ export interface AdminStats {
     configDir: string;
   };
   encryption: { algorithm: string; masterKeySource: 'env' | 'file' };
+  shrink: {
+    logicalBytes: number;
+    storedBytes: number;
+    savedBytes: number;
+    savedPercent: number;
+    filesShrunk: number;
+    filesPending: number;
+    available: boolean;
+    enabled: boolean;
+  };
 }
 
 /* ── endpoints ───────────────────────────────────────────────────────────── */
@@ -264,7 +275,7 @@ export const api = {
       request<{ ok: true }>(`/api/admin/transfers/${id}`, { method: 'DELETE' }),
     stats: () => request<AdminStats>('/api/admin/stats'),
     cleanup: () =>
-      postJson<{ expired: number; stalled: number; orphans: number; sessions: number }>(
+      postJson<{ expired: number; stalled: number; orphans: number; superseded: number; sessions: number }>(
         '/api/admin/cleanup',
         {},
       ),

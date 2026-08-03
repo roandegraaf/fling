@@ -3,11 +3,14 @@ import { BLOB_DIR } from './env.ts';
 import { q } from './db.ts';
 import { getSettings } from './settings.ts';
 import { deleteTransferBlobs } from './storage.ts';
+import { sweepSupersededBlobs } from './recompress.ts';
 
 export interface CleanupResult {
   expired: number;
   stalled: number;
   orphans: number;
+  /** Superseded originals reclaimed after a lossless recompression. */
+  superseded: number;
   sessions: number;
 }
 
@@ -21,7 +24,7 @@ type Logger = { info: (obj: unknown, msg?: string) => void; error: (obj: unknown
 export async function runCleanup(log?: Logger): Promise<CleanupResult> {
   const now = Date.now();
   const settings = getSettings();
-  const result: CleanupResult = { expired: 0, stalled: 0, orphans: 0, sessions: 0 };
+  const result: CleanupResult = { expired: 0, stalled: 0, orphans: 0, superseded: 0, sessions: 0 };
 
   for (const transfer of q.expiredTransfers.all(now)) {
     try {
@@ -63,6 +66,14 @@ export async function runCleanup(log?: Logger): Promise<CleanupResult> {
     }
   }
 
+  // Originals left behind by recompression, once their replacement has been live
+  // long enough that no in-flight request can still be reading the old variant.
+  try {
+    result.superseded = await sweepSupersededBlobs();
+  } catch (err) {
+    log?.error({ err }, 'failed to sweep superseded blobs');
+  }
+
   try {
     result.sessions = q.purgeAdminSessions.run(now).changes;
     // Download sessions only matter while a visitor might still return; a day
@@ -72,7 +83,7 @@ export async function runCleanup(log?: Logger): Promise<CleanupResult> {
     log?.error({ err }, 'failed to purge sessions');
   }
 
-  const touched = result.expired + result.stalled + result.orphans;
+  const touched = result.expired + result.stalled + result.orphans + result.superseded;
   if (touched > 0) log?.info(result, 'cleanup removed transfers');
   return result;
 }
