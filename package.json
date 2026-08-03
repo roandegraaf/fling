@@ -1,6 +1,6 @@
 {
   "name": "fling",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "license": "MIT",
   "description": "Self-hosted file transfer — drag anything, get a short link, encrypted at rest.",
